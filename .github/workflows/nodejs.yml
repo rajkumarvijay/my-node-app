@@ -34,7 +34,6 @@ jobs:
         ssh -o StrictHostKeyChecking=no -i private_key.pem ${EC2_USER}@${EC2_HOST} << 'EOF'
           # Create application directory
           mkdir -p /home/ubuntu/my-node-app
-          sudo chown ubuntu:ubuntu /home/ubuntu/my-node-app
          
           # Stop existing PM2 process if running
           pm2 stop my-node-app || true
