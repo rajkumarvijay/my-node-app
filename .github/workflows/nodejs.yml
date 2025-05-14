@@ -1,10 +1,8 @@
 name: Build Node.js
-
 on:
   push:
     branches:
       - main
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -60,7 +58,6 @@ jobs:
           sudo systemctl restart nginx
          
           pm2 save
-        EOF
-       
+        EOF       
         # Clean up
         rm private_key.pem
