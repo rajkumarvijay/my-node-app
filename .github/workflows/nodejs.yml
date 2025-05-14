@@ -40,7 +40,7 @@ jobs:
     # Step 6: Deploy to EC2
     - name: Deploy to EC2
       run: |
-        ssh -T -i private_key.pem -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+        ssh -T -i private_key.pem -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << EOF
           # Update system packages
           sudo apt update -y
           sudo apt upgrade -y
@@ -55,7 +55,7 @@ jobs:
           # Install app dependencies
           cd /home/ubuntu/my-node-app
           npm install
-          npm install pm2 --save # Install PM2 locally
+          npm install pm2 --save
 
           # Stop any existing PM2 processes
           ./node_modules/.bin/pm2 delete all || true
@@ -74,10 +74,10 @@ server {
     location / {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Upgrade \\$http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header Host \\$host;
+        proxy_cache_bypass \\$http_upgrade;
     }
 }
 EOT
@@ -92,7 +92,7 @@ EOT
           sudo nginx -t
           sudo systemctl restart nginx
           sudo systemctl enable nginx
-        EOF
+EOF
 
     # Step 7: Clean up SSH key
     - name: Clean up
