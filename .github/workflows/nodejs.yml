@@ -33,8 +33,8 @@ jobs:
         chmod 600 private_key.pem
         ssh -o StrictHostKeyChecking=no -i private_key.pem ${EC2_USER}@${EC2_HOST} << 'EOF'
           # Create application directory
-          mkdir -p /home/$USER/my-node-app
-          sudo chown $USER:$USER /home/my-node-app
+          mkdir -p /home/ubuntu/my-node-app
+          sudo chown ubuntu:ubuntu /home/ubuntu/my-node-app
          
           # Stop existing PM2 process if running
           pm2 stop my-node-app || true
