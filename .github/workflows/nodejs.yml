@@ -1,0 +1,66 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      run: npm install
+      working-directory: ./src
+
+    - name: Deploy to EC2
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USER: ${{ secrets.EC2_USER }}
+        EC2_KEY: ${{ secrets.EC2_KEY }}
+      run: |
+        echo "${EC2_KEY}" > private_key.pem
+        chmod 600 private_key.pem
+        ssh -o StrictHostKeyChecking=no -i private_key.pem ${EC2_USER}@${EC2_HOST} << 'EOF'
+          # Create application directory
+          mkdir -p /home/${EC2_USER}/my-node-app
+          
+          # Stop existing PM2 process if running
+          pm2 stop my-node-app || true
+          
+          # Remove existing files
+          rm -rf /home/${EC2_USER}/my-node-app/*
+        EOF
+        
+        # Copy application files
+        rsync -avz --exclude '.git' --exclude 'node_modules' -e "ssh -i private_key.pem -o StrictHostKeyChecking=no" ./src/ ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/my-node-app/
+        
+        # Deploy and restart the application
+        ssh -o StrictHostKeyChecking=no -i private_key.pem ${EC2_USER}@${EC2_HOST} << 'EOF'
+          cd /home/${EC2_USER}/my-node-app
+          npm install
+          npm install pm2 -g
+          pm2 start index.js --name my-node-app
+          
+          # Update Nginx configuration
+          sudo mkdir -p /etc/nginx/sites-available
+          sudo mkdir -p /etc/nginx/sites-enabled
+          sudo cp /home/${EC2_USER}/my-node-app/../nginx/my-node-app.conf /etc/nginx/sites-available/my-node-app.conf
+          sudo ln -sf /etc/nginx/sites-available/my-node-app.conf /etc/nginx/sites-enabled/
+          sudo nginx -t
+          sudo systemctl restart nginx
+          
+          pm2 save
+        EOF
+        
+        # Clean up
+        rm private_key.pem
