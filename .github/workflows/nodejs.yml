@@ -1,63 +1,82 @@
-name: Build Node.js
+name: Deploy to EC2
+
 on:
   push:
     branches:
       - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      # Step 1: Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
+      # Step 2: Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Adjust to your Node.js version
 
-    - name: Install dependencies
-      run: npm install
-      working-directory: ./src
+      # Step 3: Create SSH key
+      - name: Create SSH key
+        run: |
+          echo "${{ secrets.EC2_KEY }}" > private_key.pem
+          chmod 400 private_key.pem
 
-    - name: Deploy to EC2
-      env:
-        EC2_HOST: ${{ secrets.EC2_HOST }}
-        EC2_USER: ${{ secrets.EC2_USER }}
-        EC2_KEY: ${{ secrets.EC2_KEY }}
-      run: |
-        echo "${EC2_KEY}" > private_key.pem
-        chmod 600 private_key.pem
-        ssh -o StrictHostKeyChecking=no -i private_key.pem ${EC2_USER}@${EC2_HOST} << 'EOF'
-          # Create application directory
-          mkdir -p /home/ubuntu/my-node-app
-         
-          # Stop existing PM2 process if running
-          pm2 stop my-node-app || true
-         
-          # Remove existing files
-          rm -rf /home/${EC2_USER}/my-node-app/*
-        EOF
-       
-        # Copy application files
-        rsync -avz --exclude '.git' --exclude 'node_modules' -e "ssh -i private_key.pem -o StrictHostKeyChecking=no" ./src/ ${EC2_USER}@${EC2_HOST}:/home/${EC2_USER}/my-node-app/
-       
-        # Deploy and restart the application
-        ssh -o StrictHostKeyChecking=no -i private_key.pem ${EC2_USER}@${EC2_HOST} << 'EOF'
-          cd /home/${EC2_USER}/my-node-app
-          npm install
-          npm install pm2 -g
-          pm2 start index.js --name my-node-app
-         
-          # Update Nginx configuration
-          sudo mkdir -p /etc/nginx/sites-available
-          sudo mkdir -p /etc/nginx/sites-enabled
-          sudo cp /home/${EC2_USER}/my-node-app/../nginx/my-node-app.conf /etc/nginx/sites-available/my-node-app.conf
-          sudo ln -sf /etc/nginx/sites-available/my-node-app.conf /etc/nginx/sites-enabled/
-          sudo nginx -t
-          sudo systemctl restart nginx
-         
-          pm2 save
-        EOF       
-        # Clean up
-        rm private_key.pem
+      # Step 4: Install rsync
+      - name: Install rsync
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
+      # Step 5: Copy files to EC2
+      - name: Copy files to EC2
+        run: |
+          rsync -av -e "ssh -i private_key.pem -o StrictHostKeyChecking=no" \
+            --progress . ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/my-node-app \
+            --exclude node_modules
+          rsync -av -e "ssh -i private_key.pem -o StrictHostKeyChecking=no" \
+            ./nginx/my-node-app.conf ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/nginx/
+
+      # Step 6: Deploy and configure on EC2
+      - name: Deploy to EC2
+        run: |
+          ssh -i private_key.pem -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+            # Update system packages
+            sudo apt update && sudo apt upgrade -y
+
+            # Create directories
+            mkdir -p /home/ubuntu/my-node-app
+            mkdir -p /home/ubuntu/nginx
+
+            # Navigate to app directory
+            cd /home/ubuntu/my-node-app
+
+            # Install dependencies
+            npm install
+
+            # Install PM2 globally with sudo
+            sudo npm install -g pm2
+
+            # Stop any existing PM2 process
+            pm2 delete my-node-app || true
+
+            # Start the application
+            pm2 start index.js --name my-node-app
+            pm2 save
+
+            # Copy Nginx configuration
+            sudo mkdir -p /etc/nginx/sites-available
+            sudo mkdir -p /etc/nginx/sites-enabled
+            sudo cp /home/ubuntu/nginx/my-node-app.conf /etc/nginx/sites-available/my-node-app.conf
+            sudo ln -sf /etc/nginx/sites-available/my-node-app.conf /etc/nginx/sites-enabled/my-node-app.conf
+
+            # Test and reload Nginx
+            sudo nginx -t
+            sudo systemctl reload nginx
+          EOF
+
+      # Step 7: Clean up SSH key
+      - name: Clean up
+        run: rm -f private_key.pem
